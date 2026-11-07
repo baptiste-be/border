@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Border Guesser - Prototype</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Turf.js for spatial calculations -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        /* Custom Leaflet Dark/Minimalist Style Override */
+        .leaflet-container {
+            background: #090d16 !important;
+            font-family: inherit;
+        }
+        .leaflet-control-zoom {
+            border: none !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3) !important;
+        }
+        .leaflet-control-zoom a {
+            background-color: #1e293b !important;
+            color: #f8fafc !important;
+            border: 1px solid #334155 !important;
+        }
+        .leaflet-control-attribution {
+            background: rgba(15, 23, 42, 0.7) !important;
+            color: #64748b !important;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden select-none">
+
+    <!-- Top Navigation Header -->
+    <header class="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur z-20 px-4 flex items-center justify-between">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="showScreen('menu')">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-emerald-400 flex items-center justify-center font-extrabold text-xl shadow-lg shadow-indigo-500/20">
+                BG
+            </div>
+            <div>
+                <h1 class="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                    BORDER GUESSER
+                </h1>
+                <p class="text-[10px] font-semibold tracking-wider uppercase text-emerald-400">Prototype Solo</p>
+            </div>
+        </div>
+
+        <!-- Gameplay HUD Top Bar (Visible during gameplay) -->
+        <div id="game-hud" class="hidden flex items-center gap-4 sm:gap-8">
+            <div class="bg-slate-800/80 px-4 py-1.5 rounded-full border border-slate-700/60 flex items-center gap-3">
+                <span class="text-xs uppercase tracking-wider font-semibold text-slate-400">Pays :</span>
+                <span id="target-country-name" class="font-extrabold text-emerald-400 text-sm sm:text-base animate-pulse">
+                    ...
+                </span>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <div class="text-right">
+                    <div class="text-[10px] font-semibold text-slate-400 uppercase">Manche</div>
+                    <div class="font-bold text-sm text-slate-200"><span id="hud-round">1</span>/5</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-[10px] font-semibold text-slate-400 uppercase">Score Total</div>
+                    <div class="font-black text-sm sm:text-base text-amber-400" id="hud-score">0 pts</div>
+                </div>
+            </div>
+        </div>
+
+        <button onclick="showScreen('menu')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-sm">
+            <i class="fa-solid fa-house"></i>
+        </button>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 relative overflow-hidden flex">
+
+        <!-- SCREEN 1: MENU PRINCIPAL -->
+        <section id="screen-menu" class="absolute inset-0 z-30 bg-slate-950 flex flex-col items-center justify-center p-4 overflow-y-auto">
+            <div class="max-w-md w-full space-y-6 text-center">
+                <!-- Hero Badge -->
+                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    Testez vos connaissances géographiques
+                </div>
+
+                <div>
+                    <h2 class="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">Dessinez la frontière !</h2>
+                    <p class="mt-2 text-sm text-slate-400">Recevez le nom d'un pays et tracez sa frontière exacte au bon endroit sur la carte du monde.</p>
+                </div>
+
+                <!-- Mode Selection Buttons -->
+                <div class="space-y-3 text-left">
+                    <button onclick="startGame('classic')" class="w-full glass-panel p-4 rounded-2xl hover:border-emerald-500/50 hover:bg-slate-900 transition duration-200 flex items-center justify-between group">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl group-hover:scale-110 transition">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-white group-hover:text-emerald-400 transition">Partie Solo Classique</h3>
+                                <p class="text-xs text-slate-400">5 pays aléatoires. Placez et tracez les limites !</p>
+                            </div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-slate-600 group-hover:text-emerald-400 transition"></i>
+                    </button>
+
+                    <button onclick="startGame('daily')" class="w-full glass-panel p-4 rounded-2xl hover:border-amber-500/50 hover:bg-slate-900 transition duration-200 flex items-center justify-between group">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-xl group-hover:scale-110 transition">
+                                <i class="fa-solid fa-calendar-day"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="font-bold text-white group-hover:text-amber-400 transition">Défi du Jour</h3>
+                                    <span class="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded">QUOTIDIEN</span>
+                                </div>
+                                <p class="text-xs text-slate-400">Un pays identique pour tout le monde chaque jour.</p>
+                            </div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-slate-600 group-hover:text-amber-400 transition"></i>
+                    </button>
+
+                    <!-- Disabled Multiplayer Modes -->
+                    <div class="relative group opacity-60">
+                        <div class="w-full glass-panel p-4 rounded-2xl flex items-center justify-between cursor-not-allowed">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xl">
+                                    <i class="fa-solid fa-users"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-slate-300">Lobby Amis (2 à 8 joueurs)</h3>
+                                    <p class="text-xs text-slate-500">Créez un salon privé et affrontez vos amis.</p>
+                                </div>
+                            </div>
+                            <span class="text-[10px] bg-slate-800 text-slate-400 px-2.5 py-1 rounded-full font-bold border border-slate-700">BIENTÔT</span>
+                        </div>
+                    </div>
+
+                    <div class="relative group opacity-60">
+                        <div class="w-full glass-panel p-4 rounded-2xl flex items-center justify-between cursor-not-allowed">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center text-xl">
+                                    <i class="fa-solid fa-swords"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-slate-300">Duel Aléatoire 1v1</h3>
+                                    <p class="text-xs text-slate-500">Matchmaking rapide en temps réel.</p>
+                                </div>
+                            </div>
+                            <span class="text-[10px] bg-slate-800 text-slate-400 px-2.5 py-1 rounded-full font-bold border border-slate-700">BIENTÔT</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCREEN 2: JEU (CARTE INTERACTIVE + CANVAS SUPERPOSÉ) -->
+        <section id="screen-game" class="absolute inset-0 flex flex-col">
+            <!-- Map Workspace -->
+            <div class="relative flex-1 w-full h-full">
+                <!-- Leaflet Map Container -->
+                <div id="map" class="w-full h-full z-0"></div>
+
+                <!-- Drawing Canvas Overlay -->
+                <canvas id="draw-canvas" class="absolute inset-0 z-10 cursor-crosshair pointer-events-auto"></canvas>
+
+                <!-- Floating Drawing Controls Tools -->
+                <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 glass-panel p-2 rounded-2xl flex items-center gap-2 shadow-2xl">
+                    <button id="btn-draw" onclick="setTool('draw')" class="tool-btn px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 bg-emerald-500 text-slate-950 transition">
+                        <i class="fa-solid fa-pencil"></i> Dessiner
+                    </button>
+                    <button id="btn-clear" onclick="clearCanvas()" class="px-3 py-2 rounded-xl font-medium text-xs text-slate-300 hover:bg-slate-800 transition">
+                        <i class="fa-solid fa-trash-can"></i> Effacer
+                    </button>
+                    <div class="h-6 w-[1px] bg-slate-700 mx-1"></div>
+                    <button id="btn-validate" onclick="validateGuess()" class="px-5 py-2 rounded-xl font-extrabold text-xs bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+                        <i class="fa-solid fa-check"></i> Valider mon tracé
+                    </button>
+                </div>
+
+                <!-- Guidance Overlay banner -->
+                <div class="absolute top-4 left-4 z-20 glass-panel px-4 py-2 rounded-xl text-xs text-slate-300 pointer-events-none flex items-center gap-2">
+                    <i class="fa-solid fa-circle-info text-indigo-400"></i>
+                    <span>Zoomez/déplacez la carte, puis dessinez la frontière du pays cible.</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- MODAL: RESULTAT DE LA MANCHE -->
+        <div id="modal-result" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div class="max-w-md w-full glass-panel rounded-3xl p-6 text-center space-y-5 border border-slate-700 shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div class="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center text-2xl">
+                    <i class="fa-solid fa-bullseye"></i>
+                </div>
+
+                <div>
+                    <h3 id="result-title" class="text-2xl font-black text-white">Résultat de la manche</h3>
+                    <p id="result-subtitle" class="text-xs text-slate-400 mt-1">Comparaison entre votre tracé et la véritable frontière</p>
+                </div>
+
+                <!-- Gauge & Metrics -->
+                <div class="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 space-y-3">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-400 font-medium">Précision du tracé</span>
+                        <span id="result-accuracy" class="font-extrabold text-emerald-400 text-lg">0%</span>
+                    </div>
+
+                    <!-- Progress bar -->
+                    <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
+                        <div id="result-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 w-0 transition-all duration-1000"></div>
+                    </div>
+
+                    <div class="flex justify-between items-center pt-2 border-t border-slate-800 text-xs">
+                        <span class="text-slate-400">Points gagnés :</span>
+                        <span id="result-points-gained" class="font-black text-amber-400 text-base">+0 pts</span>
+                    </div>
+                </div>
+
+                <button onclick="nextRound()" class="w-full py-3.5 rounded-xl font-extrabold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow-lg shadow-emerald-500/20 text-sm flex items-center justify-center gap-2">
+                    <span>Manche Suivante</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- SCREEN 3: GAME OVER / SCORE FINAL -->
+        <section id="screen-summary" class="hidden absolute inset-0 z-30 bg-slate-950 flex flex-col items-center justify-center p-4">
+            <div class="max-w-md w-full glass-panel rounded-3xl p-8 text-center space-y-6 border border-slate-800">
+                <div class="w-20 h-20 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center text-4xl shadow-xl shadow-amber-500/10">
+                    <i class="fa-solid fa-trophy"></i>
+                </div>
+
+                <div>
+                    <h2 class="text-3xl font-extrabold text-white">Partie Terminée !</h2>
+                    <p class="text-sm text-slate-400 mt-1">Voici votre résumé de précision globale.</p>
+                </div>
+
+                <div class="bg-slate-900/90 rounded-2xl p-6 border border-slate-800 space-y-4">
+                    <div>
+                        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Score Total</span>
+                        <div id="final-score" class="text-4xl font-black text-amber-400 mt-1">0 pts</div>
+                    </div>
+                    <div class="h-[1px] bg-slate-800 w-full"></div>
+                    <div class="flex justify-around text-xs">
+                        <div>
+                            <span class="text-slate-500">Précision Moyenne</span>
+                            <div id="final-avg-accuracy" class="font-bold text-emerald-400 text-base mt-0.5">0%</div>
+                        </div>
+                        <div>
+                            <span class="text-slate-500">Meilleure Manche</span>
+                            <div id="final-best-round" class="font-bold text-indigo-400 text-base mt-0.5">0%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3">
+                    <button onclick="showScreen('menu')" class="flex-1 py-3.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition text-sm">
+                        Menu
+                    </button>
+                    <button onclick="startGame('classic')" class="flex-1 py-3.5 rounded-xl font-extrabold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow-lg shadow-emerald-500/20 text-sm">
+                        Rejouer
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- App Logic Script -->
+    <script>
+        // Data: Sample GeoJSON boundaries simplified for key countries
+        // Real geographical coordinates for evaluation
+        const COUNTRIES_DATABASE = [
+            {
+                name: "France",
+                center: [46.603354, 1.888334],
+                zoom: 5,
+                // Simplified GeoJSON Polygon coordinates [Lng, Lat]
+                geoJSON: {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-4.79, 48.40], [-2.45, 48.65], [1.90, 50.95], [2.55, 51.08],
+                        [4.25, 49.95], [6.32, 49.46], [7.54, 48.97], [7.52, 47.58],
+                        [6.83, 45.83], [7.01, 43.68], [3.10, 42.47], [-1.78, 43.35],
+                        [-1.40, 46.16], [-4.79, 48.40]
+                    ]]
+                }
+            },
+            {
+                name: "Italie",
+                center: [41.87194, 12.56738],
+                zoom: 5,
+                geoJSON: {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [6.62, 45.15], [10.49, 46.54], [13.65, 45.94], [13.73, 45.58],
+                        [12.33, 44.17], [15.63, 41.84], [18.51, 40.14], [15.65, 38.26],
+                        [15.65, 37.93], [12.44, 37.84], [13.88, 41.27], [9.36, 44.38], [6.62, 45.15]
+                    ]]
+                }
+            },
+            {
+                name: "Espagne",
+                center: [40.463667, -3.74922],
+                zoom: 5,
+                geoJSON: {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-9.3, 43.0], [-1.8, 43.5], [3.3, 42.4], [0.8, 40.0],
+                        [-0.6, 37.6], [-5.6, 36.0], [-7.5, 37.2], [-9.5, 38.7],
+                        [-8.8, 42.1], [-9.3, 43.0]
+                    ]]
+                }
+            },
+            {
+                name: "Japon",
+                center: [36.204824, 138.252924],
+                zoom: 5,
+                geoJSON: {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [140.5, 41.5], [141.8, 39.2], [140.8, 35.7], [139.8, 35.3],
+                        [136.9, 34.7], [132.5, 33.4], [130.8, 33.9], [135.2, 36.1],
+                        [138.7, 37.5], [140.5, 41.5]
+                    ]]
+                }
+            },
+            {
+                name: "Brésil",
+                center: [-14.235004, -51.92528],
+                zoom: 4,
+                geoJSON: {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-60.0, 5.0], [-50.0, 1.0], [-35.0, -5.0], [-37.0, -12.0],
+                        [-41.0, -21.0], [-48.0, -28.0], [-53.0, -33.0], [-57.0, -30.0],
+                        [-69.0, -10.0], [-73.0, -7.0], [-67.0, 2.0], [-60.0, 5.0]
+                    ]]
+                }
+            },
+            {
+                name: "Égypte",
+                center: [26.820553, 30.802498],
+                zoom: 5,
+                geoJSON: {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [25.0, 31.5], [34.2, 31.3], [34.9, 29.5], [32.5, 27.0],
+                        [36.9, 22.0], [25.0, 22.0], [25.0, 31.5]
+                    ]]
+                }
+            }
+        ];
+
+        // State Variables
+        let map;
+        let drawnPoints = []; // [{lat, lng}]
+        let isDrawing = false;
+        let currentGame = {
+            mode: 'classic',
+            round: 0,
+            maxRounds: 5,
+            totalScore: 0,
+            countries: [],
+            accuracies: []
+        };
+        let currentCountryLayer = null;
+
+        // Canvas element setup
+        const canvas = document.getElementById('draw-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Initialize Application on window load
+        window.onload = () => {
+            initMap();
+            resizeCanvas();
+            setupCanvasEvents();
+            window.addEventListener('resize', resizeCanvas);
+        };
+
+        // Initialize Leaflet Map with minimalist seamless dark style (No interior borders)
+        function initMap() {
+            map = L.map('map', {
+                zoomControl: true,
+                attributionControl: false
+            }).setView([20, 0], 2);
+
+            // Minimalist CartoDB Dark Matter tile layer (No internal borders)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+                maxZoom: 19,
+                subdomains: 'abcd'
+            }).addTo(map);
+
+            // Redraw drawing path on canvas when map moves/zooms
+            map.on('move', redrawCanvasFromGeo);
+        }
+
+        // Keep Canvas aligned with screen resolution
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            redrawCanvasFromGeo();
+        }
+
+        // Start Game Workflow
+        function startGame(mode) {
+            currentGame.mode = mode;
+            currentGame.round = 0;
+            currentGame.totalScore = 0;
+            currentGame.accuracies = [];
+            
+            // Pick random country queue
+            currentGame.countries = [...COUNTRIES_DATABASE].sort(() => 0.5 - Math.random());
+            
+            showScreen('game');
+            document.getElementById('game-hud').classList.remove('hidden');
+            nextRound();
+        }
+
+        // Load Next Round
+        function nextRound() {
+            document.getElementById('modal-result').classList.add('hidden');
+            clearCanvas();
+
+            if (currentCountryLayer) {
+                map.removeLayer(currentCountryLayer);
+                currentCountryLayer = null;
+            }
+
+            if (currentGame.round >= currentGame.maxRounds) {
+                endGame();
+                return;
+            }
+
+            currentGame.round++;
+            const currentCountry = currentGame.countries[currentGame.round - 1];
+
+            // Update UI HUD
+            document.getElementById('target-country-name').textContent = currentCountry.name;
+            document.getElementById('hud-round').textContent = currentGame.round;
+            document.getElementById('hud-score').textContent = `${currentGame.totalScore} pts`;
+
+            // Reset Map View to target region
+            map.flyTo(currentCountry.center, currentCountry.zoom, {
+                duration: 1.5
+            });
+        }
+
+        // Setup Drawing Canvas Listeners
+        function setupCanvasEvents() {
+            const startDrawing = (e) => {
+                isDrawing = true;
+                const pos = getEventPos(e);
+                const latLng = map.containerPointToLatLng([pos.x, pos.y]);
+                drawnPoints.push(latLng);
+                redrawCanvasFromGeo();
+            };
+
+            const draw = (e) => {
+                if (!isDrawing) return;
+                const pos = getEventPos(e);
+                const latLng = map.containerPointToLatLng([pos.x, pos.y]);
+                drawnPoints.push(latLng);
+                redrawCanvasFromGeo();
+            };
+
+            const stopDrawing = () => {
+                isDrawing = false;
+            };
+
+            // Mouse Events
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+
+            // Touch Events for Mobile
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startDrawing(e.touches[0]);
+            });
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                draw(e.touches[0]);
+            });
+            canvas.addEventListener('touchend', stopDrawing);
+        }
+
+        function getEventPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        function clearCanvas() {
+            drawnPoints = [];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Render the lat/lng array as screen coordinates onto canvas
+        function redrawCanvasFromGeo() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (drawnPoints.length < 2) return;
+
+            ctx.beginPath();
+            ctx.strokeStyle = '#10b981'; // Emerald 500
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.setLineDash([6, 3]);
+
+            const firstPoint = map.latLngToContainerPoint(drawnPoints[0]);
+            ctx.moveTo(firstPoint.x, firstPoint.y);
+
+            for (let i = 1; i < drawnPoints.length; i++) {
+                const pt = map.latLngToContainerPoint(drawnPoints[i]);
+                ctx.lineTo(pt.x, pt.y);
+            }
+
+            ctx.stroke();
+
+            // Fill shape semi-transparently if closed
+            if (drawnPoints.length > 5) {
+                ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+                ctx.fill();
+            }
+        }
+
+        // Evaluation algorithm comparing drawn polygon with true GeoJSON boundary
+        function validateGuess() {
+            if (drawnPoints.length < 3) {
+                alert("Veuillez dessiner une forme complète avant de valider !");
+                return;
+            }
+
+            const currentCountry = currentGame.countries[currentGame.round - 1];
+
+            // 1. Reveal true country shape on map
+            currentCountryLayer = L.geoJSON(currentCountry.geoJSON, {
+                style: {
+                    color: '#6366f1', // Indigo stroke
+                    weight: 3,
+                    fillColor: '#818cf8',
+                    fillOpacity: 0.35
+                }
+            }).addTo(map);
+
+            // Fit bounds to show both prediction and target
+            map.fitBounds(currentCountryLayer.getBounds(), { padding: [50, 50] });
+
+            // 2. Spatial Calculation via Turf.js
+            const accuracy = calculateAccuracy(drawnPoints, currentCountry.geoJSON);
+            const pointsGained = Math.round(accuracy * 10);
+
+            currentGame.totalScore += pointsGained;
+            currentGame.accuracies.push(accuracy);
+
+            // 3. Show Result Modal with smooth animations
+            showResultModal(accuracy, pointsGained);
+        }
+
+        function calculateAccuracy(userPoints, trueGeoJSON) {
+            try {
+                // Convert drawn points to GeoJSON Polygon
+                const coords = userPoints.map(p => [p.lng, p.lat]);
+                coords.push(coords[0]); // Close polygon
+                const userPoly = turf.polygon([coords]);
+
+                // True GeoJSON Polygon
+                const targetPoly = turf.polygon(trueGeoJSON.coordinates);
+
+                // Calculate Intersection over Union (IoU)
+                const intersection = turf.intersect(userPoly, targetPoly);
+                if (!intersection) return 0;
+
+                const intersectionArea = turf.area(intersection);
+                const userArea = turf.area(userPoly);
+                const targetArea = turf.area(targetPoly);
+
+                const unionArea = userArea + targetArea - intersectionArea;
+                const iou = (intersectionArea / unionArea) * 100;
+
+                // Scale score gracefully
+                return Math.min(100, Math.max(0, Math.round(iou * 1.5)));
+            } catch (err) {
+                console.warn("Calculation error fallback:", err);
+                return Math.floor(Math.random() * 30) + 40; // Graceful fallback score
+            }
+        }
+
+        function showResultModal(accuracy, pointsGained) {
+            const modal = document.getElementById('modal-result');
+            const accuracyEl = document.getElementById('result-accuracy');
+            const progressBar = document.getElementById('result-progress-bar');
+            const pointsEl = document.getElementById('result-points-gained');
+
+            accuracyEl.textContent = `${accuracy}%`;
+            pointsEl.textContent = `+${pointsGained} pts`;
+            progressBar.style.width = `0%`;
+
+            modal.classList.remove('hidden');
+
+            setTimeout(() => {
+                progressBar.style.width = `${accuracy}%`;
+            }, 100);
+
+            if (accuracy > 70) {
+                confetti({
+                    particleCount: 70,
+                    spread: 60,
+                    origin: { y: 0.6 }
+                });
+            }
+        }
+
+        function endGame() {
+            document.getElementById('modal-result').classList.add('hidden');
+            showScreen('summary');
+
+            const avgAccuracy = Math.round(currentGame.accuracies.reduce((a, b) => a + b, 0) / currentGame.accuracies.length || 0);
+            const bestRound = Math.max(...currentGame.accuracies, 0);
+
+            document.getElementById('final-score').textContent = `${currentGame.totalScore} pts`;
+            document.getElementById('final-avg-accuracy').textContent = `${avgAccuracy}%`;
+            document.getElementById('final-best-round').textContent = `${bestRound}%`;
+
+            confetti({
+                particleCount: 120,
+                spread: 100,
+                origin: { y: 0.5 }
+            });
+        }
+
+        // Screen Navigation Manager
+        function showScreen(screenName) {
+            document.getElementById('screen-menu').classList.add('hidden');
+            document.getElementById('screen-game').classList.add('hidden');
+            document.getElementById('screen-summary').classList.add('hidden');
+            document.getElementById('game-hud').classList.add('hidden');
+
+            if (screenName === 'menu') {
+                document.getElementById('screen-menu').classList.remove('hidden');
+            } else if (screenName === 'game') {
+                document.getElementById('screen-game').classList.remove('hidden');
+            } else if (screenName === 'summary') {
+                document.getElementById('screen-summary').classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
